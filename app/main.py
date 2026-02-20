@@ -22,40 +22,39 @@ def main():
     chat = client.chat.completions.create(
         model="anthropic/claude-haiku-4.5",
         messages=[{"role": "user", "content": args.p}],
-        tools=[
-            {
-                "type": "function",
-                "function": {
-                    "name": "Read",
-                    "description": "Read and return the contents of a file",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "file_path": {
-                                "type": "string",
-                                "description": "The path to the file to read",
-                            }
-                        },
-                        "required": ["file_path"],
-                    },
-                },
-            }
-        ],
+        tools=[{
+            "type": "function",
+            "function": {
+                "name": "Read",
+                "description": "Read and return the contents of a file",
+                "parameters": {
+                "type": "object",
+                "properties": {
+                    "file_path": {
+                    "type": "string",
+                    "description": "The path to the file to read"
+                }
+            },
+            "required": ["file_path"]
+        }
+  }
+}],
     )
 
     if not chat.choices or len(chat.choices) == 0:
         raise RuntimeError("no choices in response")
+
 
     if chat.choices[0].message.tool_calls:
         for tool_call in chat.choices[0].message.tool_calls:
             if tool_call.function.name == "Read":
                 func_args = json.loads(tool_call.function.arguments)
                 file_path = func_args["file_path"]
-                with open(file_path, "r") as f:
+                with open (file_path, "r") as f:
                     content = f.read()
                 print(content)
-        else:
-            print(chat.choices[0].message.content)
+    else:
+        print(chat.choices[0].message.content)
 
 
 if __name__ == "__main__":
