@@ -10,7 +10,7 @@ from typing import Callable
 from openai import OpenAI
 
 
-API_KEY = "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"
+API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 BASE_URL = os.getenv("OPENROUTER_BASE_URL", default="https://openrouter.ai/api/v1")
 IS_LOCAL = os.getenv("IS_LOCAL", False)
 
@@ -125,8 +125,13 @@ def Bash(**args):
     log(f"Bash: {args}")
     command = args["command"]
     log(f"Bash: {command}")
-    result = subprocess.run(command.split(), capture_output=True)
-    return f"exit_code: ${result.returncode}\noutput:\n${result.stdout}\nerror:\n${result.stderr}"
+    # Use shell=True for proper command parsing (handles quotes, pipes, etc.)
+    # On Windows, use shell=True; on Unix, we can use sh -c for better control
+    if sys.platform == "win32":
+        result = subprocess.run(command, shell=True, capture_output=True, text=True)
+    else:
+        result = subprocess.run(["sh", "-c", command], capture_output=True, text=True)
+    return f"exit_code: {result.returncode}\noutput:\n{result.stdout}\nerror:\n{result.stderr}"
 
 
 functions, tools = init_toolcalls(Read, Write, Bash)
@@ -146,7 +151,7 @@ def main():
     args = p.parse_args()
 
     if not API_KEY:
-        raise RuntimeError("OPENROUTER_API_KEY is not set")
+        raise RuntimeError("OPENROUTER_API_KEY environment variable is not set")
 
     client = OpenAI(api_key=API_KEY, base_url=BASE_URL)
     model = "z-ai/glm-4.5-air:free" if IS_LOCAL else "anthropic/claude-haiku-4.5"

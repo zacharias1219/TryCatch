@@ -1,34 +1,53 @@
-[![progress-banner](https://backend.codecrafters.io/progress/claude-code/0aa1239c-02aa-4807-8d22-b1798d8f2dfd)](https://app.codecrafters.io/users/codecrafters-bot?r=2qF)
+# AI Coding Assistant
 
-This is a starting point for Python solutions to the
-["Build Your own Claude Code" Challenge](https://codecrafters.io/challenges/claude-code).
+An intelligent AI-powered coding assistant that uses Large Language Models (LLMs) to understand code and perform actions through tool calls. This assistant can read files, write code, execute commands, and much more.
 
-Claude Code is an AI coding assistant that uses Large Language Models (LLMs) to
-understand code and perform actions through tool calls. In this challenge,
-you'll build your own Claude Code from scratch by implementing an LLM-powered
-coding assistant.
+## Features
 
-Along the way you'll learn about HTTP RESTful APIs, OpenAI-compatible tool
-calling, agent loop, and how to integrate multiple tools into an AI assistant.
+- **Tool Calling Framework**: Extensible system for defining and executing tools
+- **Multi-Model Support**: Works with OpenAI-compatible APIs (OpenRouter, local models, etc.)
+- **Agent Loop**: Autonomous execution of multi-step coding tasks
+- **File Operations**: Read, write, and manage files
+- **Command Execution**: Run shell commands safely
+- **Git Integration**: (Coming soon) Manage git repositories
+- **Code Analysis**: (Coming soon) Parse and understand code structure
 
-**Note**: If you're viewing this repo on GitHub, head over to
-[codecrafters.io](https://codecrafters.io) to try the challenge.
+## Installation
 
-# Passing the first stage
+1. Ensure you have Python 3.14+ installed
+2. Install dependencies using `uv`:
+   ```sh
+   uv sync
+   ```
 
-The entry point for your `claude-code` implementation is in `app/main.py`. Study
-and uncomment the relevant code, and submit to pass the first stage:
+## Configuration
 
+Set your API key as an environment variable:
 ```sh
-codecrafters submit
+export OPENROUTER_API_KEY="your-api-key-here"
 ```
 
-# Stage 2 & beyond
+Or use a local model by setting:
+```sh
+export IS_LOCAL=true
+```
 
-Note: This section is for stages 2 and beyond.
+## Usage
 
-1. Ensure you have `uv` installed locally.
-2. Run `./your_program.sh` to run your program, which is implemented in
-   `app/main.py`.
-3. Run `codecrafters submit` to submit your solution to CodeCrafters. Test
-   output will be streamed to your terminal.
+Run the assistant with a prompt:
+```sh
+./your_program.sh -p "Create a hello world script in Python"
+```
+
+Or directly with Python:
+```sh
+uv run -m app.main -p "Your task description here"
+```
+
+## Development
+
+The main entry point is `app/main.py`. Tools are defined using the `@toolcall` decorator.
+
+## Roadmap
+
+See [PROPOSAL.md](PROPOSAL.md) for planned enhancements and improvements.
