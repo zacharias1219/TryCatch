@@ -1,80 +1,143 @@
-import argparse
-import json
 import os
 import sys
-from pathlib import Path
+import json
+import subprocess
+import argparse
+from functools import wraps
+from typing import Callable
 
-try:
-    from dotenv import load_dotenv
 
-    load_dotenv()
-except ImportError:
-    pass
 from openai import OpenAI
 
-API_KEY = os.getenv("OPENROUTER_API_KEY")
+
+API_KEY = "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"
 BASE_URL = os.getenv("OPENROUTER_BASE_URL", default="https://openrouter.ai/api/v1")
 IS_LOCAL = os.getenv("IS_LOCAL", False)
 
 
-class Tool:
-    def describe(self):
-        return {
-            "type": "function",
-            "function": {
-                "name": self.name,
-                "description": self.description,
-                "parameters": {
-                    "type": "object",
-                    "properties": self.properties,
-                    "required": self.required_properties,
+class Parameter:
+    def __init__(self, type: str, name: str, description: str, required: bool = True):
+        self.type = type
+        self.name = name
+        self.description = description
+        self.required = required
+
+
+def toolcall(name: str, description: str, parameters: list[Parameter]) -> Callable:
+    def _decorator(func):
+        def wrapper(*args, **kw):
+            return func(*args, **kw)
+
+        wrapper.name = name
+        wrapper.description = description
+        wrapper.parameters = parameters
+        return wrapper
+
+    return _decorator
+
+
+def init_toolcalls(*funcs):
+    results = {}
+    toolcalls = []
+    for func in funcs:
+        results[func.name] = func
+        props = {}
+        for p in func.parameters:
+            props[p.name] = {"type": p.type, "description": p.description}
+        toolcalls.append(
+            {
+                "type": "function",
+                "function": {
+                    "name": func.name,
+                    "description": func.description,
+                    "parameters": {
+                        "type": "object",
+                        "required": [p.name for p in func.parameters if p.required],
+                        "properties": props,
+                    },
                 },
-            },
-        }
-
-    def execute(self, **kwargs):
-        raise RuntimeError("Not implemented")
+            }
+        )
+    return results, toolcalls
 
 
-class ReadTool(Tool):
-    name = "Read"
-    description = "Read and return the contents of a file"
-    properties = {
-        "file_path": {
-            "type": "string",
-            "description": "The path to the file to read",
-        }
-    }
-    required_properties = ["file_path"]
-
-    def execute(self, **kwargs):
-        return Path(kwargs["file_path"]).read_text()
+def log(msg: str):
+    print(msg, file=sys.stderr)
 
 
-class WriteTool(Tool):
-    name = "Write"
-    description = "Write content to a file"
-    properties = {
-        "file_path": {
-            "type": "string",
-            "description": "The path of the file to write to",
-        },
-        "content": {
-            "type": "string",
-            "description": "The content to write to the file",
-        },
-    }
-    required_properties = ["file_path", "content"]
+@toolcall(
+    name="Read",
+    description="Read and return the contents of a file",
+    parameters=[
+        Parameter(
+            type="string", name="file_path", description="The path to the file to read"
+        )
+    ],
+)
+def Read(**args):
+    log(f"Read: {args}")
+    file_path = args["file_path"]
+    log(f"Read: {file_path}")
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            return f.read()
+    except IOError as e:
+        return str(e)
 
-    def execute(self, **kwargs):
-        Path(kwargs["file_path"]).write_text(kwargs["content"])
-        return Path(kwargs["file_path"]).read_text()
+
+@toolcall(
+    name="Write",
+    description="Write content to a file",
+    parameters=[
+        Parameter(
+            type="string",
+            name="file_path",
+            description="The path to the file to write to",
+        ),
+        Parameter(
+            type="string",
+            name="content",
+            description="The content to write to the file",
+        ),
+    ],
+)
+def Write(**args):
+    log(f"Write: {args}")
+    file_path = args["file_path"]
+    content = args["content"]
+    log(f"Write: {file_path}: {content}")
+    try:
+        with open(file_path, "w", encoding="utf-8") as f:
+            f.write(content)
+        return ""
+    except IOError as e:
+        return str(e)
 
 
-TOOLS = {
-    ReadTool.name: ReadTool(),
-    WriteTool.name: WriteTool(),
-}
+@toolcall(
+    name="Bash",
+    description="Execute a shell command",
+    parameters=[
+        Parameter(type="string", name="command", description="The command to execute")
+    ],
+)
+def Bash(**args):
+    log(f"Bash: {args}")
+    command = args["command"]
+    log(f"Bash: {command}")
+    result = subprocess.run(command.split(), capture_output=True)
+    return f"exit_code: ${result.returncode}\noutput:\n${result.stdout}\nerror:\n${result.stderr}"
+
+
+functions, tools = init_toolcalls(Read, Write, Bash)
+
+
+def call_function(tool_call):
+    log(f"call: {tool_call.function.name}")
+    fn = functions[tool_call.function.name]
+    args = json.loads(tool_call.function.arguments)
+    log("parameters: " + json.dumps(args))
+    return fn(**args)
 
 
 def main():
@@ -89,34 +152,39 @@ def main():
     model = "z-ai/glm-4.5-air:free" if IS_LOCAL else "anthropic/claude-haiku-4.5"
     messages = [{"role": "user", "content": args.p}]
 
-    tool_descriptions = [tool.describe() for tool in TOOLS.values()]
+    steps = 0
 
-    while True:
+    while steps < 100:
+        steps += 1
         chat = client.chat.completions.create(
-            model=model,
-            messages=messages,
-            tools=tool_descriptions,
+            model=model, messages=messages, tools=tools
         )
 
         if not chat.choices or len(chat.choices) == 0:
             raise RuntimeError("no choices in response")
 
-        message = chat.choices[0].message
-        messages.append(message)
-        tool_calls = chat.choices[0].message.tool_calls
+        choice = chat.choices[0]
+        messages.append(choice.message)
 
-        if not tool_calls:
-            print(message.content)
+        log(choice.message.content)
+
+        tool_calls = choice.message.tool_calls
+        if tool_calls and len(tool_calls) > 0:
+            for tool_call in tool_calls:
+                if tool_call.type == "function":
+                    result = call_function(tool_call)
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tool_call.id,
+                            "content": result,
+                        }
+                    )
+        else:
+            print(choice.message.content)
+
+        if choice.finish_reason == "stop":
             break
-
-        for tool_call in tool_calls:
-            function = tool_call.function
-            arguments = json.loads(function.arguments)
-            tool = TOOLS[function.name]
-            result = tool.execute(**arguments)
-            messages.append(
-                {"role": "tool", "tool_call_id": tool_call.id, "content": result}
-            )
 
 
 if __name__ == "__main__":
